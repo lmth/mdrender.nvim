@@ -41,10 +41,13 @@ M.parse = function(buf)
                     end
                 elseif ct == "info_string" then
                     info_str = vim.treesitter.get_node_text(child, buf) or ""
-                    -- First whitespace-delimited word is the language
-                    lang = (info_str:match("^(%S+)") or ""):lower()
-                    -- "editable" alone as the first word means no language
-                    if lang == "editable" then lang = "" end
+                    -- Scan whitespace-delimited tokens
+                    for token in info_str:gmatch("%S+") do
+                        local t = token:lower()
+                        if t ~= "editable" and lang == "" then
+                            lang = t  -- first non-"editable" token is the language
+                        end
+                    end
                 end
             end
 
@@ -53,10 +56,16 @@ M.parse = function(buf)
 
             local _, col_start = node:start()
 
+            -- Check if "editable" appears as a token in the info string
+            local editable = false
+            for token in info_str:gmatch("%S+") do
+                if token:lower() == "editable" then editable = true end
+            end
+
             table.insert(items, {
                 type            = "code_block",
                 lang            = lang,
-                editable        = info_str:match("%f[%a]editable%f[%A]") ~= nil,
+                editable        = editable,
                 fence_start_row = fence_start_row,
                 fence_end_row   = fence_end_row,   -- nil if block is unclosed
                 col_start       = col_start,
