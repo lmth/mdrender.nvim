@@ -67,9 +67,33 @@ local function attach(buf)
 
     buf_state[buf] = { timer = nil, wins = win_saved }
 
-    -- Override filetype-default K and gd so otter-ls handles them
+    -- Override filetype-default K and gd so otter-ls handles them.
+    -- K uses a custom implementation because vim.lsp.buf.hover() (Neovim 0.11+)
+    -- checks ctx.bufnr == current_buf and aborts when otter-ls returns ctx.bufnr
+    -- of the shadow buffer instead of the main markdown buffer.
     local map_opts = { buffer = buf, silent = true }
-    vim.keymap.set("n", "K",  vim.lsp.buf.hover,       vim.tbl_extend("force", map_opts, { desc = "Hover (otter)" }))
+    vim.keymap.set("n", "K", function()
+        local params = vim.lsp.util.make_position_params(0, "utf-16")
+        vim.lsp.buf_request_all(0, "textDocument/hover", params, function(results, _ctx)
+            local contents = {}
+            for _, resp in pairs(results) do
+                local result = resp.result
+                if result and result.contents then
+                    vim.list_extend(
+                        contents,
+                        vim.lsp.util.convert_input_to_markdown_lines(result.contents)
+                    )
+                    contents[#contents + 1] = "---"
+                end
+            end
+            if #contents == 0 then
+                vim.notify("No information available", vim.log.levels.INFO)
+                return
+            end
+            contents[#contents] = nil  -- remove trailing "---"
+            vim.lsp.util.open_floating_preview(contents, "markdown", { focus_id = "textDocument/hover" })
+        end)
+    end, vim.tbl_extend("force", map_opts, { desc = "Hover (otter)" }))
     vim.keymap.set("n", "gd", vim.lsp.buf.definition,  vim.tbl_extend("force", map_opts, { desc = "Go to definition (otter)" }))
     vim.keymap.set("n", "gr", vim.lsp.buf.references,  vim.tbl_extend("force", map_opts, { desc = "References (otter)" }))
 
