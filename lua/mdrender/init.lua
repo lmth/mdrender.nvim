@@ -3,7 +3,9 @@ local M = {}
 local parser   = require("mdrender.parser")
 local renderer = require("mdrender.renderer")
 local hl       = require("mdrender.highlights")
-local otter    = require("mdrender.otter_integration")
+local shadow   = require("mdrender.shadow")
+local lsp      = require("mdrender.lsp")
+local runner   = require("mdrender.runner")
 
 -- Per-buffer state: timers and per-window saved conceallevel
 ---@type table<integer, {timer: any, wins: table<integer, {cl:integer, cc:string}>}>
@@ -15,7 +17,6 @@ local function get_win(buf)
 end
 
 local function attach_window(win)
-    -- Save existing values so we can restore them precisely on detach
     local prev_cl = vim.wo[win].conceallevel
     local prev_cc = vim.wo[win].concealcursor
     vim.wo[win].conceallevel = 3
@@ -35,7 +36,9 @@ local function do_render(buf)
     local items = parser.parse(buf)
     renderer.clear(buf)
     renderer.render(buf, items, get_win(buf))
-    otter.activate(buf, items)
+    shadow.sync(buf, items)
+    -- Forward diagnostics from shadow bufs to this buffer
+    vim.schedule(function() lsp.forward_diagnostics(buf) end)
 end
 
 local function schedule_render(buf)
@@ -58,7 +61,7 @@ local function schedule_render(buf)
 end
 
 local function attach(buf)
-    if buf_state[buf] then return end  -- already attached
+    if buf_state[buf] then return end
 
     local win_saved = {}
     for _, win in ipairs(vim.fn.win_findbuf(buf)) do
@@ -67,49 +70,34 @@ local function attach(buf)
 
     buf_state[buf] = { timer = nil, wins = win_saved }
 
-    -- Override filetype-default K and gd so otter-ls handles them.
-    -- K uses a custom implementation because vim.lsp.buf.hover() (Neovim 0.11+)
-    -- checks ctx.bufnr == current_buf and aborts when otter-ls returns ctx.bufnr
-    -- of the shadow buffer instead of the main markdown buffer.
     local map_opts = { buffer = buf, silent = true }
+
+    -- K: hover via shadow buffer LSP (direct, no otter proxy)
     vim.keymap.set("n", "K", function()
-        local params = vim.lsp.util.make_position_params(0, "utf-16")
-        vim.lsp.buf_request_all(0, "textDocument/hover", params, function(results, _ctx)
-            local contents = {}
-            for _, resp in pairs(results) do
-                local result = resp.result
-                if result and result.contents then
-                    vim.list_extend(
-                        contents,
-                        vim.lsp.util.convert_input_to_markdown_lines(result.contents)
-                    )
-                    contents[#contents + 1] = "---"
-                end
-            end
-            if #contents == 0 then
-                vim.notify("No information available", vim.log.levels.INFO)
-                return
-            end
-            contents[#contents] = nil  -- remove trailing "---"
-            vim.lsp.util.open_floating_preview(contents, "markdown", { focus_id = "textDocument/hover" })
-        end)
-    end, vim.tbl_extend("force", map_opts, { desc = "Hover (otter)" }))
-    vim.keymap.set("n", "gd", vim.lsp.buf.definition,  vim.tbl_extend("force", map_opts, { desc = "Go to definition (otter)" }))
-    vim.keymap.set("n", "gr", vim.lsp.buf.references,  vim.tbl_extend("force", map_opts, { desc = "References (otter)" }))
+        lsp.hover(buf)
+    end, vim.tbl_extend("force", map_opts, { desc = "Hover (mdrender)" }))
+
+    -- gd: go-to-definition via shadow buffer
+    vim.keymap.set("n", "gd", function()
+        lsp.definition(buf)
+    end, vim.tbl_extend("force", map_opts, { desc = "Go to definition (mdrender)" }))
+
+    -- <leader>r: run the block under the cursor
+    vim.keymap.set("n", "<leader>r", function()
+        runner.run(buf)
+    end, vim.tbl_extend("force", map_opts, { desc = "Run editable block (mdrender)" }))
 
     local group = vim.api.nvim_create_augroup("mdrender_buf_" .. buf, { clear = true })
 
-    -- Re-render on text change (debounced)
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-        group  = group,
-        buffer = buf,
+        group    = group,
+        buffer   = buf,
         callback = function() schedule_render(buf) end,
     })
 
-    -- Apply conceallevel when this buffer is opened in a new window
     vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
-        group  = group,
-        buffer = buf,
+        group    = group,
+        buffer   = buf,
         callback = function()
             local win = vim.api.nvim_get_current_win()
             if vim.api.nvim_win_get_buf(win) == buf and not buf_state[buf].wins[win] then
@@ -118,11 +106,26 @@ local function attach(buf)
         end,
     })
 
-    -- Detach when buffer is unloaded
+    -- Forward diagnostics whenever any buffer's diagnostics change
+    vim.api.nvim_create_autocmd("DiagnosticChanged", {
+        group    = group,
+        callback = function(ev)
+            -- Only act if the changed buffer is one of our shadow buffers
+            local state = shadow._state[buf]
+            if not state then return end
+            for _, bstate in pairs(state.blocks) do
+                if bstate.buf == ev.buf then
+                    vim.schedule(function() lsp.forward_diagnostics(buf) end)
+                    return
+                end
+            end
+        end,
+    })
+
     vim.api.nvim_create_autocmd("BufUnload", {
-        group  = group,
-        buffer = buf,
-        once   = true,
+        group    = group,
+        buffer   = buf,
+        once     = true,
         callback = function() M.detach(buf) end,
     })
 
@@ -142,12 +145,12 @@ M.detach = function(buf)
         detach_window(win, saved)
     end
 
-    pcall(vim.keymap.del, "n", "K",  { buffer = buf })
-    pcall(vim.keymap.del, "n", "gd", { buffer = buf })
-    pcall(vim.keymap.del, "n", "gr", { buffer = buf })
+    pcall(vim.keymap.del, "n", "K",        { buffer = buf })
+    pcall(vim.keymap.del, "n", "gd",       { buffer = buf })
+    pcall(vim.keymap.del, "n", "<leader>r", { buffer = buf })
 
     renderer.clear(buf)
-    otter.forget(buf)
+    shadow.forget(buf)
     buf_state[buf] = nil
 
     pcall(vim.api.nvim_del_augroup_by_name, "mdrender_buf_" .. buf)
@@ -158,7 +161,6 @@ M.setup = function(config)
 
     hl.setup()
 
-    -- Re-apply highlight groups when colorscheme changes
     vim.api.nvim_create_autocmd("ColorScheme", {
         group    = vim.api.nvim_create_augroup("mdrender_global", { clear = true }),
         callback = hl.setup,

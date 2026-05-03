@@ -11,6 +11,11 @@ local function walk(node, cb)
     end
 end
 
+-- Extract id=<value> from an info string. Returns nil if not present.
+local function extract_id(info_str)
+    return info_str:match("[Ii][Dd]=([%w_%-]+)")
+end
+
 ---@return table[]
 M.parse = function(buf)
     local items = {}
@@ -20,6 +25,13 @@ M.parse = function(buf)
 
     local trees = ts_parser:parse(true)
     if not trees or not trees[1] then return items end
+
+    -- Counter for anonymous editable blocks in this buffer
+    local anon_count = 0
+    local md_stem = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t:r")
+    -- Sanitize stem for use in identifiers
+    md_stem = md_stem:gsub("[^%w%-]", "-"):gsub("%-+", "-"):gsub("^%-", ""):gsub("%-$", "")
+    if md_stem == "" then md_stem = "unnamed" end
 
     walk(trees[1]:root(), function(node)
         local ntype = node:type()
@@ -41,11 +53,11 @@ M.parse = function(buf)
                     end
                 elseif ct == "info_string" then
                     info_str = vim.treesitter.get_node_text(child, buf) or ""
-                    -- Scan whitespace-delimited tokens
                     for token in info_str:gmatch("%S+") do
                         local t = token:lower()
-                        if t ~= "editable" and lang == "" then
-                            lang = t  -- first non-"editable" token is the language
+                        -- skip "editable", id=... tokens; first remaining token is the language
+                        if t ~= "editable" and not t:match("^id=") and lang == "" then
+                            lang = t
                         end
                     end
                 end
@@ -56,16 +68,28 @@ M.parse = function(buf)
 
             local _, col_start = node:start()
 
-            -- Check if "editable" appears as a token in the info string
+            -- Check flags in info string
             local editable = false
+            local explicit_id = extract_id(info_str)
             for token in info_str:gmatch("%S+") do
                 if token:lower() == "editable" then editable = true end
             end
 
+            -- "output" is a special pseudo-language used by the runner
+            local is_output = (lang == "output")
+
+            -- Assign stable block_id for editable and output blocks
+            local block_id = explicit_id
+            if editable and not block_id then
+                block_id = md_stem .. "-editable-anonymous-" .. anon_count
+                anon_count = anon_count + 1
+            end
+
             table.insert(items, {
-                type            = "code_block",
+                type            = is_output and "output_block" or "code_block",
                 lang            = lang,
                 editable        = editable,
+                block_id        = block_id,  -- nil for non-editable non-output blocks
                 fence_start_row = fence_start_row,
                 fence_end_row   = fence_end_row,   -- nil if block is unclosed
                 col_start       = col_start,

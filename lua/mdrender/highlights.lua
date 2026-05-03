@@ -48,6 +48,14 @@ M.setup = function()
     vim.api.nvim_set_hl(0, "MdRenderEditBorder", { fg = border_fg })
     vim.api.nvim_set_hl(0, "MdRenderEditLabel",  { fg = func_fg, bold = true })
     vim.api.nvim_set_hl(0, "MdRenderEditFill",   { bg = edit_bg })
+
+    -- Output block (terminal-style: dark green tint)
+    local string_fg  = get_hl("String").fg or 0x98c379
+    local output_bg  = blend(string_fg, normal_bg, 0.07)
+    local header_fg  = blend(comment_fg, normal_bg, 0.60)
+    vim.api.nvim_set_hl(0, "MdRenderOutputFill",   { bg = output_bg })
+    vim.api.nvim_set_hl(0, "MdRenderOutputLabel",  { fg = string_fg, bg = output_bg, bold = true })
+    vim.api.nvim_set_hl(0, "MdRenderOutputHeader", { fg = header_fg, bg = output_bg, italic = true })
 end
 
 return M

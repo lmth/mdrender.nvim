@@ -126,6 +126,41 @@ local function render_heading(buf, item)
     })
 end
 
+-- ── Output blocks ─────────────────────────────────────────────────────────────
+
+local function render_output(buf, item)
+    if not item.fence_start_row then return end
+
+    -- Conceal opening fence, show a terminal-style label
+    local fence_line = vim.api.nvim_buf_get_lines(buf, item.fence_start_row, item.fence_start_row + 1, false)[1] or ""
+    set_mark(buf, item.fence_start_row, item.col_start, {
+        end_col       = #fence_line,
+        conceal       = "",
+        virt_text     = { { "  output ", "MdRenderOutputLabel" } },
+        virt_text_pos = "inline",
+    })
+
+    -- Background on all lines (fences + content)
+    local end_row = item.fence_end_row or item.fence_start_row
+    for row = item.fence_start_row, end_row do
+        set_mark(buf, row, 0, { line_hl_group = "MdRenderOutputFill" })
+    end
+
+    -- Dim the header line (first content line = status + timestamp)
+    if item.fence_end_row and item.fence_start_row + 1 < item.fence_end_row then
+        set_mark(buf, item.fence_start_row + 1, 0, { line_hl_group = "MdRenderOutputHeader" })
+    end
+
+    -- Conceal closing fence
+    if item.fence_end_row then
+        local close_line = vim.api.nvim_buf_get_lines(buf, item.fence_end_row, item.fence_end_row + 1, false)[1] or ""
+        set_mark(buf, item.fence_end_row, item.col_start, {
+            end_col = #close_line,
+            conceal = "",
+        })
+    end
+end
+
 -- ── Public API ───────────────────────────────────────────────────────────────
 
 M.clear = function(buf)
@@ -137,7 +172,9 @@ M.render = function(buf, items, win)
 
     for _, item in ipairs(items) do
         local ok, err = pcall(function()
-            if item.type == "code_block" then
+            if item.type == "output_block" then
+                render_output(buf, item)
+            elseif item.type == "code_block" then
                 if item.editable then
                     render_editable(buf, item, win_width)
                 else
