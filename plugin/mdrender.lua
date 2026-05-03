@@ -1,0 +1,2 @@
+-- Auto-setup entry point — lets users call require("mdrender").setup(...)
+-- without needing a separate plugin/ loader for the lazy.nvim case.
