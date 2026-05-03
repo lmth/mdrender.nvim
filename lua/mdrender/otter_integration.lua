@@ -34,7 +34,11 @@ M.activate = function(buf, items)
     if M._state[buf] == key then return end  -- nothing changed
     M._state[buf] = key
 
-    pcall(otter.activate, langs, true, true, nil)
+    -- otter.activate() uses nvim_get_current_buf() internally,
+    -- so we must call it in the context of the target buffer.
+    vim.api.nvim_buf_call(buf, function()
+        pcall(otter.activate, langs, true, true, nil)
+    end)
 end
 
 M.forget = function(buf)
