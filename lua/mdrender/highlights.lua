@@ -1,4 +1,5 @@
 local M = {}
+local bit = require("bit")
 
 local function get_hl(name)
     return vim.api.nvim_get_hl(0, { name = name, link = false })
@@ -7,9 +8,13 @@ end
 -- Linear RGB blend: alpha=1.0 → pure fg, alpha=0.0 → pure bg
 local function blend(fg, bg, alpha)
     local function ch(a, b) return math.min(255, math.max(0, math.floor(a * alpha + b * (1 - alpha)))) end
-    local fr, fg_, fb = (fg >> 16) & 0xff, (fg >> 8) & 0xff, fg & 0xff
-    local br, bg_, bb = (bg >> 16) & 0xff, (bg >> 8) & 0xff, bg & 0xff
-    return (ch(fr, br) << 16) | (ch(fg_, bg_) << 8) | ch(fb, bb)
+    local fr = bit.band(bit.rshift(fg, 16), 0xff)
+    local fg_ = bit.band(bit.rshift(fg, 8), 0xff)
+    local fb  = bit.band(fg, 0xff)
+    local br  = bit.band(bit.rshift(bg, 16), 0xff)
+    local bg_ = bit.band(bit.rshift(bg, 8), 0xff)
+    local bb  = bit.band(bg, 0xff)
+    return bit.bor(bit.lshift(ch(fr, br), 16), bit.bor(bit.lshift(ch(fg_, bg_), 8), ch(fb, bb)))
 end
 
 M.setup = function()
