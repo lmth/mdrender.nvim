@@ -67,6 +67,12 @@ local function attach(buf)
 
     buf_state[buf] = { timer = nil, wins = win_saved }
 
+    -- Override filetype-default K and gd so otter-ls handles them
+    local map_opts = { buffer = buf, silent = true }
+    vim.keymap.set("n", "K",  vim.lsp.buf.hover,       vim.tbl_extend("force", map_opts, { desc = "Hover (otter)" }))
+    vim.keymap.set("n", "gd", vim.lsp.buf.definition,  vim.tbl_extend("force", map_opts, { desc = "Go to definition (otter)" }))
+    vim.keymap.set("n", "gr", vim.lsp.buf.references,  vim.tbl_extend("force", map_opts, { desc = "References (otter)" }))
+
     local group = vim.api.nvim_create_augroup("mdrender_buf_" .. buf, { clear = true })
 
     -- Re-render on text change (debounced)
@@ -111,6 +117,10 @@ M.detach = function(buf)
     for win, saved in pairs(state.wins) do
         detach_window(win, saved)
     end
+
+    pcall(vim.keymap.del, "n", "K",  { buffer = buf })
+    pcall(vim.keymap.del, "n", "gd", { buffer = buf })
+    pcall(vim.keymap.del, "n", "gr", { buffer = buf })
 
     renderer.clear(buf)
     otter.forget(buf)
