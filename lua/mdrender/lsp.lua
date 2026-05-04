@@ -120,6 +120,17 @@ M.show_diagnostics = function(md_buf)
         local sbuf   = shadow.ensure_buf(md_buf, block_id)
         local bstate = shadow._state[md_buf] and shadow._state[md_buf].blocks[block_id]
         if sbuf and bstate then
+            -- Push current markdown content into the shadow buffer so Neovim's
+            -- LSP machinery sends textDocument/didChange to RA, regardless of
+            -- whether shadow.sync already did it this cycle.
+            local md_lines = vim.api.nvim_buf_get_lines(
+                md_buf, bstate.fence_start_row + 1, bstate.fence_end_row, false)
+            local sbuf_lines = vim.api.nvim_buf_get_lines(sbuf, 0, -1, false)
+            if table.concat(md_lines) ~= table.concat(sbuf_lines) then
+                pcall(vim.api.nvim_buf_set_lines, sbuf, 0, -1, false, md_lines)
+            end
+
+            -- Also poke RA via didChangeWatchedFiles (catches closed-document cases)
             local uri     = vim.uri_from_fname(bstate.path)
             local clients = vim.lsp.get_clients({ bufnr = sbuf })
             for _, client in ipairs(clients) do
@@ -130,7 +141,10 @@ M.show_diagnostics = function(md_buf)
         end
     end
 
-    vim.diagnostic.open_float(nil, { scope = "cursor", source = "always" })
+    -- Re-forward from shadow bufs before opening float (may have been stale)
+    M.forward_diagnostics(md_buf)
+    -- scope="line" shows all diagnostics on the current line, not just at the cursor col
+    vim.diagnostic.open_float(nil, { scope = "line", source = "always" })
 end
 
 -- ── Go-to-definition ─────────────────────────────────────────────────────────
