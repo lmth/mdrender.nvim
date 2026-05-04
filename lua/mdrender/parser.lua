@@ -53,9 +53,12 @@ M.parse = function(buf)
                     end
                 elseif ct == "info_string" then
                     info_str = vim.treesitter.get_node_text(child, buf) or ""
-                    for token in info_str:gmatch("%S+") do
+                    -- Split by both whitespace and commas to handle:
+                    --   ```rust editable         (space-separated, our format)
+                    --   ```rust,editable          (mdbook format)
+                    --   ```rust,editable,ignore,mdbook-runnable
+                    for token in info_str:gmatch("[^%s,]+") do
                         local t = token:lower()
-                        -- skip "editable", id=... tokens; first remaining token is the language
                         if t ~= "editable" and not t:match("^id=") and lang == "" then
                             lang = t
                         end
@@ -71,7 +74,7 @@ M.parse = function(buf)
             -- Check flags in info string
             local editable = false
             local explicit_id = extract_id(info_str)
-            for token in info_str:gmatch("%S+") do
+            for token in info_str:gmatch("[^%s,]+") do
                 if token:lower() == "editable" then editable = true end
             end
 
