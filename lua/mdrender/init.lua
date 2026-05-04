@@ -108,10 +108,23 @@ local function attach(buf)
         end,
     })
 
-    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    -- Full re-render on normal-mode changes and when leaving insert mode
+    vim.api.nvim_create_autocmd({ "TextChanged", "InsertLeave" }, {
         group    = group,
         buffer   = buf,
         callback = function() schedule_render(buf) end,
+    })
+
+    -- In insert mode: only sync shadow files so LSP stays current.
+    -- Avoid re-rendering (which runs zE and clears extmarks) while typing —
+    -- that interferes with cursor position and completion popup anchoring.
+    vim.api.nvim_create_autocmd("TextChangedI", {
+        group    = group,
+        buffer   = buf,
+        callback = function()
+            local items = parser.parse(buf)
+            shadow.sync(buf, items)
+        end,
     })
 
     vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
