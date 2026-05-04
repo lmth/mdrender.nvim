@@ -19,23 +19,27 @@ end
 local function attach_window(win)
     local prev_cl = vim.wo[win].conceallevel
     local prev_cc = vim.wo[win].concealcursor
+    local prev_fm = vim.wo[win].foldmethod
     vim.wo[win].conceallevel = 3
     vim.wo[win].concealcursor = "n"
-    return { cl = prev_cl, cc = prev_cc }
+    vim.wo[win].foldmethod = "manual"
+    return { cl = prev_cl, cc = prev_cc, fm = prev_fm }
 end
 
 local function detach_window(win, saved)
     if vim.api.nvim_win_is_valid(win) then
         vim.wo[win].conceallevel  = saved.cl
         vim.wo[win].concealcursor = saved.cc
+        vim.wo[win].foldmethod    = saved.fm
     end
 end
 
 local function do_render(buf)
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local items = parser.parse(buf)
-    renderer.clear(buf)
-    renderer.render(buf, items, get_win(buf))
+    local win   = get_win(buf)
+    renderer.clear(buf, win)
+    renderer.render(buf, items, win)
     shadow.sync(buf, items)
     -- Forward diagnostics from shadow bufs to this buffer
     vim.schedule(function() lsp.forward_diagnostics(buf) end)

@@ -172,7 +172,7 @@ end
 -- On success (exit 0): fence label is shown, content lines are concealed.
 -- On failure          : full content shown with error highlight.
 
-local function render_build(buf, item)
+local function render_build(buf, item, win)
     if not item.fence_start_row then return end
 
     -- Determine success by reading first content line
@@ -204,19 +204,6 @@ local function render_build(buf, item)
     end
 
     if item.fence_end_row then
-        if success then
-            -- Conceal all content lines (collapsed look)
-            for row = item.fence_start_row + 1, item.fence_end_row - 1 do
-                local l = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
-                if l ~= "" then
-                    set_mark(buf, row, 0, {
-                        end_col = #l,
-                        conceal = "",
-                    })
-                end
-            end
-        end
-
         -- Conceal closing fence
         local close_line = vim.api.nvim_buf_get_lines(
             buf, item.fence_end_row, item.fence_end_row + 1, false)[1] or ""
@@ -224,13 +211,27 @@ local function render_build(buf, item)
             end_col = #close_line,
             conceal = "",
         })
+
+        if success and win and vim.api.nvim_win_is_valid(win)
+                and item.fence_start_row + 1 < item.fence_end_row then
+            -- Create a real vim fold over the content lines (1-indexed for :fold)
+            local fold_start = item.fence_start_row + 2   -- first content line
+            local fold_end   = item.fence_end_row  + 1    -- closing ``` line
+            pcall(vim.api.nvim_win_call, win, function()
+                vim.cmd(fold_start .. "," .. fold_end .. "fold")
+            end)
+        end
     end
 end
 
 
 
-M.clear = function(buf)
+M.clear = function(buf, win)
     vim.api.nvim_buf_clear_namespace(buf, M.ns, 0, -1)
+    -- Clear all manual folds in the window (re-render will recreate them)
+    if win and vim.api.nvim_win_is_valid(win) then
+        pcall(vim.api.nvim_win_call, win, function() vim.cmd("normal! zE") end)
+    end
 end
 
 M.render = function(buf, items, win)
@@ -241,7 +242,7 @@ M.render = function(buf, items, win)
             if item.type == "output_block" then
                 render_output(buf, item)
             elseif item.type == "build_block" then
-                render_build(buf, item)
+                render_build(buf, item, win)
             elseif item.type == "code_block" then
                 if item.editable then
                     render_editable(buf, item, win_width)
