@@ -32,6 +32,14 @@ local function render_editable(buf, item, win_width)
     local label_str = " " .. label .. " "
     local label_w   = vim.fn.strdisplaywidth(label_str)
 
+    -- Hint line above the block: show <leader>r run keybinding
+    if item.fence_start_row then
+        set_mark(buf, item.fence_start_row, 0, {
+            virt_lines       = { { { "  <leader>r  run", "MdRenderHint" } } },
+            virt_lines_above = true,
+        })
+    end
+
     -- Top border: ┌─ icon lang ──┐
     local fill_w = math.max(0, box_width - 2 - label_w - 1)
     local top_virt = {

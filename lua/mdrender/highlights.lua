@@ -57,6 +57,10 @@ M.setup = function()
     vim.api.nvim_set_hl(0, "MdRenderOutputLabel",  { fg = string_fg, bg = output_bg, bold = true })
     vim.api.nvim_set_hl(0, "MdRenderOutputHeader", { fg = header_fg, bg = output_bg, italic = true })
 
+    -- Inline key hints (dim, right-aligned feel)
+    local hint_fg = blend(comment_fg, normal_bg, 0.45)
+    vim.api.nvim_set_hl(0, "MdRenderHint", { fg = hint_fg, italic = true })
+
     -- Build block (cargo/stderr): collapsed when successful (gray tint), red tint on error
     local diag_warn_fg   = get_hl("DiagnosticWarn").fg  or 0xe5c07b
     local diag_error_fg  = get_hl("DiagnosticError").fg or 0xe06c75
