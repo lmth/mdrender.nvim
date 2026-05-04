@@ -86,6 +86,11 @@ local function attach(buf)
         lsp.definition(buf)
     end, vim.tbl_extend("force", map_opts, { desc = "Go to definition (mdrender)" }))
 
+    -- gl: show diagnostics at cursor (also pokes RA via didChangeWatchedFiles)
+    vim.keymap.set("n", "gl", function()
+        lsp.show_diagnostics(buf)
+    end, vim.tbl_extend("force", map_opts, { desc = "Show diagnostics (mdrender)" }))
+
     -- <leader>r: run the block under the cursor
     vim.keymap.set("n", "<leader>r", function()
         runner.run(buf)
@@ -159,9 +164,10 @@ M.detach = function(buf)
         detach_window(win, saved)
     end
 
-    pcall(vim.keymap.del, "n", "K",        { buffer = buf })
-    pcall(vim.keymap.del, "n", "gd",       { buffer = buf })
-    pcall(vim.keymap.del, "n", "<leader>r", { buffer = buf })
+    pcall(vim.keymap.del, "n", "K",           { buffer = buf })
+    pcall(vim.keymap.del, "n", "gd",          { buffer = buf })
+    pcall(vim.keymap.del, "n", "gl",          { buffer = buf })
+    pcall(vim.keymap.del, "n", "<leader>r",   { buffer = buf })
 
     renderer.clear(buf)
     shadow.forget(buf)

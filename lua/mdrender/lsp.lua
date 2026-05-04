@@ -110,6 +110,29 @@ M.forward_diagnostics = function(md_buf)
     vim.diagnostic.set(diag_ns, md_buf, mapped, {})
 end
 
+-- ── Show diagnostics (with forced RA refresh) ────────────────────────────────
+
+M.show_diagnostics = function(md_buf)
+    local row      = vim.api.nvim_win_get_cursor(0)[1] - 1
+    local block_id = shadow.block_at_row(md_buf, row)
+
+    if block_id then
+        local sbuf   = shadow.ensure_buf(md_buf, block_id)
+        local bstate = shadow._state[md_buf] and shadow._state[md_buf].blocks[block_id]
+        if sbuf and bstate then
+            local uri     = vim.uri_from_fname(bstate.path)
+            local clients = vim.lsp.get_clients({ bufnr = sbuf })
+            for _, client in ipairs(clients) do
+                client.notify("workspace/didChangeWatchedFiles", {
+                    changes = { { uri = uri, type = 2 } },  -- 2 = Changed
+                })
+            end
+        end
+    end
+
+    vim.diagnostic.open_float(nil, { scope = "cursor", source = "always" })
+end
+
 -- ── Go-to-definition ─────────────────────────────────────────────────────────
 
 M.definition = function(md_buf)
