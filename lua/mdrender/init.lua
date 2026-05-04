@@ -89,6 +89,16 @@ local function attach(buf)
 
     local group = vim.api.nvim_create_augroup("mdrender_buf_" .. buf, { clear = true })
 
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group    = group,
+        buffer   = buf,
+        callback = function()
+            local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+            local block_id = shadow.block_at_row(buf, row)
+            if block_id then shadow.ensure_buf(buf, block_id) end
+        end,
+    })
+
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
         group    = group,
         buffer   = buf,

@@ -10,7 +10,7 @@ local shadow = require("mdrender.shadow")
 -- ── Hover ─────────────────────────────────────────────────────────────────────
 
 M.hover = function(md_buf)
-    local row = vim.api.nvim_win_get_cursor(0)[1] - 1  -- 0-indexed
+    local row = vim.api.nvim_win_get_cursor(0)[1] - 1
     local col = vim.api.nvim_win_get_cursor(0)[2]
 
     local block_id, local_row = shadow.block_at_row(md_buf, row)
@@ -19,16 +19,9 @@ M.hover = function(md_buf)
         return
     end
 
-    local sbuf = shadow.shadow_buf(md_buf, block_id)
+    local sbuf = shadow.ensure_buf(md_buf, block_id)
     if not sbuf or not vim.api.nvim_buf_is_valid(sbuf) then
-        vim.notify("No shadow buffer for block", vim.log.levels.INFO)
-        return
-    end
-
-    -- Find an LSP client attached to the shadow buffer
-    local clients = vim.lsp.get_clients({ bufnr = sbuf })
-    if #clients == 0 then
-        vim.notify("No LSP attached to shadow buffer", vim.log.levels.INFO)
+        vim.notify("mdrender: could not create shadow buffer", vim.log.levels.WARN)
         return
     end
 
@@ -37,28 +30,43 @@ M.hover = function(md_buf)
         position     = { line = local_row, character = col },
     }
 
-    vim.lsp.buf_request_all(sbuf, "textDocument/hover", params, function(results)
-        local contents = {}
-        for _, resp in pairs(results) do
-            local result = resp and resp.result
-            if result and result.contents then
-                vim.list_extend(
-                    contents,
-                    vim.lsp.util.convert_input_to_markdown_lines(result.contents)
-                )
-                contents[#contents + 1] = "---"
-            end
-        end
-        if #contents == 0 then
-            vim.notify("No information available", vim.log.levels.INFO)
+    local function do_hover()
+        local clients = vim.lsp.get_clients({ bufnr = sbuf })
+        if #clients == 0 then
+            vim.notify("mdrender: LSP initializing, try again shortly", vim.log.levels.INFO)
             return
         end
-        contents[#contents] = nil  -- remove trailing "---"
-        vim.lsp.util.open_floating_preview(
-            contents, "markdown",
-            { focus_id = "mdrender/hover", border = "rounded" }
-        )
-    end)
+        vim.lsp.buf_request_all(sbuf, "textDocument/hover", params, function(results)
+            local contents = {}
+            for _, resp in pairs(results) do
+                local result = resp and resp.result
+                if result and result.contents then
+                    vim.list_extend(
+                        contents,
+                        vim.lsp.util.convert_input_to_markdown_lines(result.contents)
+                    )
+                    contents[#contents + 1] = "---"
+                end
+            end
+            if #contents == 0 then
+                vim.notify("No information available", vim.log.levels.INFO)
+                return
+            end
+            contents[#contents] = nil
+            vim.lsp.util.open_floating_preview(
+                contents, "markdown",
+                { focus_id = "mdrender/hover", border = "rounded" }
+            )
+        end)
+    end
+
+    local clients = vim.lsp.get_clients({ bufnr = sbuf })
+    if #clients == 0 then
+        -- Buffer just created; retry once after a short delay for LSP to attach
+        vim.defer_fn(do_hover, 800)
+    else
+        do_hover()
+    end
 end
 
 -- ── Diagnostics ───────────────────────────────────────────────────────────────
@@ -115,7 +123,7 @@ M.definition = function(md_buf)
         return
     end
 
-    local sbuf = shadow.shadow_buf(md_buf, block_id)
+    local sbuf = shadow.ensure_buf(md_buf, block_id)
     if not sbuf then return end
 
     local params = {

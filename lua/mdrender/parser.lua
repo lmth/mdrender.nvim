@@ -75,8 +75,9 @@ M.parse = function(buf)
                 if token:lower() == "editable" then editable = true end
             end
 
-            -- "output" is a special pseudo-language used by the runner
+            -- "output" and "build" are special pseudo-languages used by the runner
             local is_output = (lang == "output")
+            local is_build  = (lang == "build")
 
             -- Assign stable block_id for editable and output blocks
             local block_id = explicit_id
@@ -86,7 +87,9 @@ M.parse = function(buf)
             end
 
             table.insert(items, {
-                type            = is_output and "output_block" or "code_block",
+                type = is_output and "output_block"
+                    or is_build  and "build_block"
+                    or "code_block",
                 lang            = lang,
                 editable        = editable,
                 block_id        = block_id,  -- nil for non-editable non-output blocks

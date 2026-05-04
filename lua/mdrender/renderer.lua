@@ -161,7 +161,73 @@ local function render_output(buf, item)
     end
 end
 
--- ── Public API ───────────────────────────────────────────────────────────────
+-- ── Build blocks ──────────────────────────────────────────────────────────────
+
+-- Build fences look like:
+--   ```build id=<id>
+--   -- exit 0  |  <timestamp>
+--   <cargo lines>
+--   ```
+--
+-- On success (exit 0): fence label is shown, content lines are concealed.
+-- On failure          : full content shown with error highlight.
+
+local function render_build(buf, item)
+    if not item.fence_start_row then return end
+
+    -- Determine success by reading first content line
+    local success = false
+    if item.fence_end_row and item.fence_start_row + 1 < item.fence_end_row then
+        local header = vim.api.nvim_buf_get_lines(
+            buf, item.fence_start_row + 1, item.fence_start_row + 2, false)[1] or ""
+        success = header:match("^%-%-  ?exit 0") ~= nil
+    end
+
+    local fill_hl  = success and "MdRenderBuildFill"       or "MdRenderBuildErrorFill"
+    local label_hl = success and "MdRenderBuildLabel"      or "MdRenderBuildErrorLabel"
+    local label    = success and "  build (ok) "          or "  build (FAILED) "
+
+    -- Conceal opening fence, show label
+    local fence_line = vim.api.nvim_buf_get_lines(
+        buf, item.fence_start_row, item.fence_start_row + 1, false)[1] or ""
+    set_mark(buf, item.fence_start_row, item.col_start, {
+        end_col       = #fence_line,
+        conceal       = "",
+        virt_text     = { { label, label_hl } },
+        virt_text_pos = "inline",
+    })
+
+    -- Background on all lines
+    local end_row = item.fence_end_row or item.fence_start_row
+    for row = item.fence_start_row, end_row do
+        set_mark(buf, row, 0, { line_hl_group = fill_hl })
+    end
+
+    if item.fence_end_row then
+        if success then
+            -- Conceal all content lines (collapsed look)
+            for row = item.fence_start_row + 1, item.fence_end_row - 1 do
+                local l = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
+                if l ~= "" then
+                    set_mark(buf, row, 0, {
+                        end_col = #l,
+                        conceal = "",
+                    })
+                end
+            end
+        end
+
+        -- Conceal closing fence
+        local close_line = vim.api.nvim_buf_get_lines(
+            buf, item.fence_end_row, item.fence_end_row + 1, false)[1] or ""
+        set_mark(buf, item.fence_end_row, item.col_start, {
+            end_col = #close_line,
+            conceal = "",
+        })
+    end
+end
+
+
 
 M.clear = function(buf)
     vim.api.nvim_buf_clear_namespace(buf, M.ns, 0, -1)
@@ -174,6 +240,8 @@ M.render = function(buf, items, win)
         local ok, err = pcall(function()
             if item.type == "output_block" then
                 render_output(buf, item)
+            elseif item.type == "build_block" then
+                render_build(buf, item)
             elseif item.type == "code_block" then
                 if item.editable then
                     render_editable(buf, item, win_width)

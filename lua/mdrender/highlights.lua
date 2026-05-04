@@ -56,6 +56,16 @@ M.setup = function()
     vim.api.nvim_set_hl(0, "MdRenderOutputFill",   { bg = output_bg })
     vim.api.nvim_set_hl(0, "MdRenderOutputLabel",  { fg = string_fg, bg = output_bg, bold = true })
     vim.api.nvim_set_hl(0, "MdRenderOutputHeader", { fg = header_fg, bg = output_bg, italic = true })
+
+    -- Build block (cargo/stderr): collapsed when successful (gray tint), red tint on error
+    local diag_warn_fg   = get_hl("DiagnosticWarn").fg  or 0xe5c07b
+    local diag_error_fg  = get_hl("DiagnosticError").fg or 0xe06c75
+    local build_ok_bg    = blend(comment_fg,    normal_bg, 0.06)
+    local build_err_bg   = blend(diag_error_fg, normal_bg, 0.08)
+    vim.api.nvim_set_hl(0, "MdRenderBuildFill",        { bg = build_ok_bg })
+    vim.api.nvim_set_hl(0, "MdRenderBuildLabel",       { fg = diag_warn_fg, bg = build_ok_bg, italic = true })
+    vim.api.nvim_set_hl(0, "MdRenderBuildErrorFill",   { bg = build_err_bg })
+    vim.api.nvim_set_hl(0, "MdRenderBuildErrorLabel",  { fg = diag_error_fg, bg = build_err_bg, bold = true })
 end
 
 return M
