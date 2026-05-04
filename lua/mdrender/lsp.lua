@@ -86,7 +86,7 @@ M.forward_diagnostics = function(md_buf)
     local mapped = {}
     for id, bstate in pairs(state.blocks) do
         local sbuf = bstate.buf
-        if vim.api.nvim_buf_is_valid(sbuf) then
+        if sbuf and vim.api.nvim_buf_is_valid(sbuf) then
             local diags = vim.diagnostic.get(sbuf)
             for _, d in ipairs(diags) do
                 -- Map shadow buffer row back to markdown buffer row
