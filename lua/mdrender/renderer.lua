@@ -289,6 +289,7 @@ local function render_table(buf, item)
 
     local B = "MdRenderTableBorder"
     local H = "MdRenderTableHeader"
+    local C = "MdRenderTableCell"
 
     -- Build a horizontal rule segment list: ┌─┬─┐  /  ├─┼─┤  /  └─┴─┘
     local function hline(l, m, r)
@@ -300,43 +301,50 @@ local function render_table(buf, item)
         return segs
     end
 
+    -- Build a padded data-row segment list: │ cell   │ cell   │
+    local function data_line(cells, cell_hl)
+        local segs = {}
+        for j = 1, ncols do
+            local cell = cells[j] or ""
+            local pad  = col_widths[j] - vim.fn.strdisplaywidth(cell)
+            segs[#segs + 1] = { "│", B }
+            segs[#segs + 1] = { " " .. cell .. string.rep(" ", pad + 1), cell_hl }
+        end
+        segs[#segs + 1] = { "│", B }
+        return segs
+    end
+
     -- Top border above the first row.
     set_mark(buf, parsed[1].buf_row, 0, {
         virt_lines       = { hline("┌", "┬", "┐") },
         virt_lines_above = true,
     })
 
-    -- Each row.
+    -- Each row: conceal the raw line and overlay the formatted replacement.
+    -- Using "overlay" (not "inline") avoids a Neovim rendering glitch where
+    -- inline virt_text at col 0 is silently dropped.
     local header_done = false
     for _, row in ipairs(parsed) do
+        local segs, line_hl
         if row.is_delim then
-            -- Conceal the raw delimiter and replace inline with ├──┼──┤.
-            -- Delimiter rows have no inline code so treesitter doesn't conflict.
-            set_mark(buf, row.buf_row, 0, {
-                end_col       = #row.raw,
-                conceal       = "",
-                virt_text     = hline("├", "┼", "┤"),
-                virt_text_pos = "inline",
-            })
-            set_mark(buf, row.buf_row, 0, { line_hl_group = "MdRenderTableFill" })
+            segs    = hline("├", "┼", "┤")
+            line_hl = "MdRenderTableFill"
+        elseif not header_done then
+            header_done = true
+            segs    = data_line(row.cells, H)
+            line_hl = H
         else
-            -- Data / header row: conceal only each | with │ so treesitter can
-            -- render inline code spans (backticks) without interference.
-            local line_hl = not header_done and H or "MdRenderTableFill"
-            if not header_done then header_done = true end
-            set_mark(buf, row.buf_row, 0, { line_hl_group = line_hl })
-            for i = 1, #row.raw do
-                if row.raw:sub(i, i) == "|" then
-                    local pcol = i - 1  -- 0-indexed
-                    set_mark(buf, row.buf_row, pcol, {
-                        end_col       = pcol + 1,
-                        conceal       = "",
-                        virt_text     = { { "│", B } },
-                        virt_text_pos = "inline",
-                    })
-                end
-            end
+            segs    = data_line(row.cells, C)
+            line_hl = "MdRenderTableFill"
         end
+
+        set_mark(buf, row.buf_row, 0, { line_hl_group = line_hl })
+        set_mark(buf, row.buf_row, 0, {
+            end_col       = #row.raw,
+            conceal       = "",
+            virt_text     = segs,
+            virt_text_pos = "overlay",
+        })
     end
 
     -- Bottom border below the last row.
