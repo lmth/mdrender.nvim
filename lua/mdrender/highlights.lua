@@ -74,9 +74,9 @@ M.setup = function()
     -- Tables
     local type_fg    = get_hl("Type").fg or 0x56b6c2
     local table_bg   = blend(comment_fg, normal_bg, 0.07)
-    local border_dim = blend(comment_fg, normal_bg, 0.55)
+    local border_dim = blend(comment_fg, normal_bg, 0.70)
     vim.api.nvim_set_hl(0, "MdRenderTableBorder", { fg = border_dim })
-    vim.api.nvim_set_hl(0, "MdRenderTableHeader", { fg = type_fg, bold = true })
+    vim.api.nvim_set_hl(0, "MdRenderTableHeader", { fg = type_fg, bg = blend(type_fg, normal_bg, 0.10), bold = true })
     vim.api.nvim_set_hl(0, "MdRenderTableCell",   { fg = get_hl("Normal").fg or 0xabb2bf })
     vim.api.nvim_set_hl(0, "MdRenderTableFill",   { bg = table_bg })
 end
