@@ -1,10 +1,12 @@
 local M = {}
 
+-- Node types whose children we never need to recurse into.
+local walk_skip = { fenced_code_block = true, pipe_table = true }
+
 -- Recursively walk a TSNode tree, calling cb(node) for each node.
--- Skips children of fenced_code_block (no headings inside code).
 local function walk(node, cb)
     cb(node)
-    if node:type() ~= "fenced_code_block" then
+    if not walk_skip[node:type()] then
         for child in node:iter_children() do
             walk(child, cb)
         end
@@ -99,6 +101,18 @@ M.parse = function(buf)
                 fence_start_row = fence_start_row,
                 fence_end_row   = fence_end_row,   -- nil if block is unclosed
                 col_start       = col_start,
+            })
+
+        -- ── Pipe tables ────────────────────────────────────────────────────
+        elseif ntype == "pipe_table" then
+            local sr, _, er, ec = node:range()
+            -- node:range() end is exclusive; if end_col==0 the last content
+            -- line is er-1, otherwise it is er.
+            local end_row = (ec == 0) and (er - 1) or er
+            table.insert(items, {
+                type      = "table",
+                start_row = sr,
+                end_row   = end_row,
             })
 
         -- ── ATX headings (#, ##, …) ────────────────────────────────────────

@@ -234,6 +234,122 @@ end
 
 
 
+-- ── Tables ───────────────────────────────────────────────────────────────────
+
+local function parse_cells(line)
+    -- Strip optional leading indent and surrounding pipes, then split.
+    local inner = line:match("^%s*|?(.-)%s*|?%s*$") or line
+    local cells = {}
+    for cell in (inner .. "|"):gmatch("([^|]*)|") do
+        cells[#cells + 1] = cell:match("^%s*(.-)%s*$")
+    end
+    -- A trailing | produces a final empty string — drop it.
+    if cells[#cells] == "" then cells[#cells] = nil end
+    return cells
+end
+
+local function is_delimiter_row(line)
+    -- Only |, -, :, and whitespace, and at least one -.
+    return line:match("^%s*|") ~= nil
+        and line:match("%-") ~= nil
+        and line:match("[^|%-%s:]") == nil
+end
+
+local function render_table(buf, item)
+    local lines = vim.api.nvim_buf_get_lines(buf, item.start_row, item.end_row + 1, false)
+    if #lines == 0 then return end
+
+    -- Classify each buffer line.
+    -- parsed[i] = { raw, buf_row, is_delim, cells }
+    local parsed = {}
+    for i, line in ipairs(lines) do
+        parsed[i] = {
+            raw     = line,
+            buf_row = item.start_row + i - 1,
+            is_delim = is_delimiter_row(line),
+            cells    = is_delimiter_row(line) and {} or parse_cells(line),
+        }
+    end
+
+    -- Column widths (max cell display-width across all data rows, min 3).
+    local col_widths = {}
+    local ncols = 0
+    for _, row in ipairs(parsed) do
+        if not row.is_delim then
+            ncols = math.max(ncols, #row.cells)
+            for j, cell in ipairs(row.cells) do
+                local w = vim.fn.strdisplaywidth(cell)
+                col_widths[j] = math.max(col_widths[j] or 3, w)
+            end
+        end
+    end
+    if ncols == 0 then return end
+    -- Ensure every column has at least a minimum width entry.
+    for j = 1, ncols do col_widths[j] = col_widths[j] or 3 end
+
+    local B = "MdRenderTableBorder"
+    local H = "MdRenderTableHeader"
+    local C = "MdRenderTableCell"
+
+    -- Build a horizontal rule segment list: ┌─┬─┐  /  ├─┼─┤  /  └─┴─┘
+    local function hline(l, m, r)
+        local segs = { { l, B } }
+        for j = 1, ncols do
+            segs[#segs + 1] = { string.rep("─", col_widths[j] + 2), B }
+            segs[#segs + 1] = { j < ncols and m or r, B }
+        end
+        return segs
+    end
+
+    -- Build a data-row segment list: │ cell │ cell │
+    local function data_line(cells, cell_hl)
+        local segs = {}
+        for j = 1, ncols do
+            local cell = cells[j] or ""
+            local pad  = col_widths[j] - vim.fn.strdisplaywidth(cell)
+            segs[#segs + 1] = { "│", B }
+            segs[#segs + 1] = { " " .. cell .. string.rep(" ", pad + 1), cell_hl }
+        end
+        segs[#segs + 1] = { "│", B }
+        return segs
+    end
+
+    -- Top border above the first row.
+    set_mark(buf, parsed[1].buf_row, 0, {
+        virt_lines       = { hline("┌", "┬", "┐") },
+        virt_lines_above = true,
+    })
+
+    -- Each row: conceal the raw text, inject formatted virtual text.
+    local header_done = false
+    for _, row in ipairs(parsed) do
+        local segs
+        if row.is_delim then
+            segs = hline("├", "┼", "┤")
+        elseif not header_done then
+            header_done = true
+            segs = data_line(row.cells, H)
+        else
+            segs = data_line(row.cells, C)
+        end
+
+        set_mark(buf, row.buf_row, 0, {
+            end_col       = #row.raw,
+            conceal       = "",
+            virt_text     = segs,
+            virt_text_pos = "inline",
+        })
+        set_mark(buf, row.buf_row, 0, { line_hl_group = "MdRenderTableFill" })
+    end
+
+    -- Bottom border below the last row.
+    set_mark(buf, parsed[#parsed].buf_row, 0, {
+        virt_lines = { hline("└", "┴", "┘") },
+    })
+end
+
+
+
 M.clear = function(buf, win)
     vim.api.nvim_buf_clear_namespace(buf, M.ns, 0, -1)
     -- Clear all manual folds in the window (re-render will recreate them)
@@ -257,6 +373,8 @@ M.render = function(buf, items, win)
                 else
                     render_plain_code(buf, item)
                 end
+            elseif item.type == "table" then
+                render_table(buf, item)
             elseif item.type == "heading" then
                 render_heading(buf, item)
             end
